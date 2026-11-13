@@ -1,0 +1,24 @@
+{
+  "name": "limen-onebot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal QQNT OneBot v11 protocol side: no AI, no plugin market, no web console",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "init": "node scripts/init.mjs",
+    "start": "node --env-file-if-exists=.env src/main.mjs",
+    "launch": "node scripts/launch.mjs",
+    "cli": "node --env-file-if-exists=.env scripts/cli.mjs",
+    "qq:prepare": "node --env-file-if-exists=.env scripts/qq-prepare.mjs",
+    "qq:build": "node --env-file-if-exists=.env scripts/qq-build.mjs",
+    "qq:check": "node --env-file-if-exists=.env scripts/qq-check.mjs",
+    "self-test": "node scripts/self-test.mjs"
+  },
+  "dependencies": {
+    "silk-wasm": "3.7.1",
+    "ws": "8.22.0"
+  }
+}
