@@ -3,7 +3,7 @@
 极简 QQNT OneBot v11 协议端。
 
 ## 环境要求
-
+- Windows X64
 - Node.js ≥ 22.5.0
 - QQNT 运行时（首次启动自动准备，见 `runtime/`）
 
