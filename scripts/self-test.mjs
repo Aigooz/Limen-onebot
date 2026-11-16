@@ -12,6 +12,8 @@ import { BotError } from '../src/errors.mjs';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { EventEmitter } from 'node:events';
+import { readKernelProfile } from '../src/qq/kernel/profile.mjs';
 
 class FakeDriver extends QQDriver {
   constructor() { super({ account: 0 }); this.calls = []; this.images = null; }
@@ -134,6 +136,62 @@ try {
       birthday: { birthday_year: '2000', birthday_month: '1', birthday_day: '2' },
       location: undefined
     }]);
+  });
+  await check('kernel profile reads asynchronous native callbacks and keeps the existing fields', async () => {
+    const callbacks = new EventEmitter(), calls = [], requests = [];
+    const profileService = {
+      fetchUserDetailInfo: async (...args) => {
+        requests.push(args);
+        callbacks.emit('profile-detail', { uid: 'u_other', longNick: 'wrong' });
+        callbacks.emit('profile-detail', {
+          uid: 'u_self', commonExt: { longNick: 'old signature' },
+          simpleInfo: { coreInfo: { uid: 'u_self', nick: 'old nickname' }, baseInfo: {
+            sex: 2, birthday_year: 2000, birthday_month: 1, birthday_day: 2
+          } }
+        });
+        return { result: 0 };
+      },
+      modifyDesktopMiniProfile: async payload => { calls.push(payload); return { result: 0 }; },
+    };
+    const actions = createKernelActions({
+      session: () => ({ getProfileService: () => profileService }), msgService: () => null,
+      self: () => ({ uin: '10000', uid: 'u_self' }), emit: () => {}, uidToUin: () => 0, profileCallbacks: callbacks,
+    });
+    await actions['profile.set']({ nickname: 'new nickname', sex: 1 });
+    assert.deepEqual(requests, [['BuddyProfileStore', ['u_self'], 0, [0]]]);
+    assert.deepEqual(calls, [{ nick: 'new nickname', longNick: 'old signature', sex: 1,
+      birthday: { birthday_year: '2000', birthday_month: '1', birthday_day: '2' }, location: undefined }]);
+    assert.equal(callbacks.listenerCount('profile-detail'), 0);
+  });
+  await check('kernel profile retries incomplete local data from the server and cleans listeners', async () => {
+    const callbacks = new EventEmitter(), sources = [];
+    const service = { fetchUserDetailInfo: async (_store, _uids, source) => {
+      sources.push(source);
+      callbacks.emit('profile-detail', source === 0
+        ? { uid: 'u_self', nick: 'incomplete' }
+        : { uid: 'u_self', nick: 'complete', birthday_year: 2000 });
+      return { result: 0 };
+    } };
+    const detail = await readKernelProfile(service, 'u_self', {
+      callbacks, timeout: 25, accept: value => value.birthday_year !== undefined,
+    });
+    assert.deepEqual(sources, [0, 1]);
+    assert.equal(detail.nick, 'complete');
+    assert.equal(callbacks.listenerCount('profile-detail'), 0);
+  });
+  await check('kernel profile never changes QQ when existing fields are missing or query fails', async () => {
+    let changes = 0;
+    for (const result of [{ nick: 'old', longNick: 'old', sex: 2 }, null]) {
+      const actions = createKernelActions({
+        session: () => ({ getProfileService: () => ({
+          getUserDetailInfo: async () => result,
+          modifyDesktopMiniProfile: async () => { changes++; return { result: 0 }; },
+        }) }), msgService: () => null, self: () => ({ uin: '10000', uid: 'u_self' }),
+        emit: () => {}, uidToUin: () => 0,
+      });
+      await assert.rejects(actions['profile.set']({ nickname: 'new' }), error => error.code === 1501);
+    }
+    assert.equal(changes, 0);
   });
   await check('kernel avatar passes a validated local path to setHeader and releases it', async () => {
     writeFileSync(avatarSource, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVQImWNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=', 'base64'));

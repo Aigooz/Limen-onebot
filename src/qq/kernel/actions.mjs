@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { BotError } from '../../errors.mjs';
 import { id } from '../../messages.mjs';
+import { readKernelProfile } from './profile.mjs';
 
 const num = value => {
   const parsed = Number(value);
@@ -483,28 +484,33 @@ export function createKernelActions(context, flags = new RequestFlags(), media =
       }));
     },
 
-    'profile.set': async ({ nickname, signature, sex }) => {
+    'profile.set': async ({ nickname, signature, sex, signal }) => {
       if (nickname === undefined && signature === undefined && sex === undefined) {
         throw new BotError('No supported profile field was supplied', 1400);
       }
       const profile = session().getProfileService();
-      const current = nickname === undefined || signature === undefined || sex === undefined
-        ? await profile.getUserDetailInfo(String(context.self?.()?.uid || '')).catch(() => null)
-        : null;
-      const detail = current?.userDetailInfo ?? current?.detailInfo ?? current?.info ?? current ?? {};
-      const payload = {};
-      if (nickname !== undefined) payload.nick = String(nickname).slice(0, 36);
-      if (signature !== undefined) payload.longNick = String(signature).slice(0, 200);
-      else if (detail.longNick !== undefined) payload.longNick = String(detail.longNick).slice(0, 200);
-      if (sex !== undefined) payload.sex = sex === 'male' ? 1 : sex === 'female' ? 2 : 0;
-      else if (detail.sex !== undefined) payload.sex = Number(detail.sex) || 0;
-      const birthday = detail.birthday ?? {};
-      payload.birthday = {
-        birthday_year: String(detail.birthday_year ?? birthday.birthday_year ?? birthday.year ?? 0),
-        birthday_month: String(detail.birthday_month ?? birthday.birthday_month ?? birthday.month ?? 0),
-        birthday_day: String(detail.birthday_day ?? birthday.birthday_day ?? birthday.day ?? 0)
+      const buildPayload = detail => {
+        const nick = nickname ?? detail.nick;
+        const longNick = signature ?? detail.longNick;
+        const rawSex = sex === undefined ? detail.sex : sex === 'male' ? 1 : sex === 'female' ? 2 : sex === 'unknown' ? 0 : sex;
+        const gender = Number(rawSex);
+        const birthday = detail.birthday ?? {};
+        const year = detail.birthday_year ?? birthday.birthday_year ?? birthday.year;
+        const month = detail.birthday_month ?? birthday.birthday_month ?? birthday.month;
+        const day = detail.birthday_day ?? birthday.birthday_day ?? birthday.day;
+        if (nick == null || longNick == null || rawSex == null || !Number.isInteger(gender) || gender < 0 || gender > 255 ||
+            [year, month, day].some(value => value == null || !/^\d+$/.test(String(value)))) return null;
+        return { nick: String(nick).slice(0, 36), longNick: String(longNick).slice(0, 200), sex: gender,
+          birthday: { birthday_year: String(year), birthday_month: String(month), birthday_day: String(day) }, location: undefined };
       };
-      payload.location = undefined;
+      const detail = await readKernelProfile(profile, String(context.self?.()?.uid || ''), {
+        callbacks: context.profileCallbacks, signal, accept: value => buildPayload(value) !== null
+      });
+      const payload = buildPayload(detail);
+      if (!payload) {
+        throw new BotError('QQ self profile is incomplete; no profile fields were changed', 1501);
+      }
+      signal?.throwIfAborted();
       const value = await variants('QQ self profile update', [
         () => profile.modifyDesktopMiniProfile(payload),
         () => profile.modifySelfProfile(payload)

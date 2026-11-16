@@ -42,7 +42,7 @@ const callbacks = new EventEmitter(); let requestingQR = false, loginConnected =
 // them only after authentication.
 const requestFlags = new RequestFlags();
 const actionContext = { session:()=>session, msgService:()=>msgService, self:()=>self, emit:event,
-  uidToUin:uid=>contactUins.get(uid)||0 };
+  uidToUin:uid=>contactUins.get(uid)||0, profileCallbacks:callbacks };
 const kernelActions = createKernelActions(actionContext, requestFlags, {
   imageCache, voiceCache,
   msgService: () => msgService,
@@ -223,6 +223,9 @@ async function initializeSession(info) {
       onKickedOffline: onlyCurrent(() => lost('kicked')), timeout: config.rpcTimeout, signal: guard.signal });
     guard.assert(); msgService = service;
     callbacks.messageSessionId = activeSession.getSessionId();
+    try { activeSession.getProfileService().addKernelProfileListener(listener({
+      onUserDetailInfoChanged: onlyCurrent((...values) => callbacks.emit('profile-detail', ...values))
+    })); } catch {}
     try { activeSession.getBuddyService().addKernelBuddyListener(listener({
       onBuddyListChange: onlyCurrent((...values) => { values.forEach(value => learn(value)); callbacks.emit('buddy-list', ...values); }),
       onBuddyListChangedV2: onlyCurrent((...values) => { values.forEach(value => learn(value)); callbacks.emit('buddy-list', ...values); }), onBuddyInfoChange: onlyCurrent(learn),

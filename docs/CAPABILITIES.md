@@ -15,7 +15,7 @@
 | `get_login_info` | `account.get`（宿主内部） | 宿主返回当前账号与昵称 | 已接线，未验收 |
 | `get_friend_list` | `BuddyService.getBuddyListV2(3)` + `ProfileService.getCoreAndBaseInfo(2)` | 兼容 2/3 参数版本；UID→UIN 转换 | 已接线，未验收 |
 | `get_stranger_info` | `ProfileService.getUserDetailInfoByUin(1)`，回退 `getUserSimpleInfo(2)` | 昵称、性别、年龄、签名、QID | 已接线，未验收 |
-| `set_qq_profile` | `ProfileService.modifyDesktopMiniProfile(1)`，回退 `modifySelfProfile(1)` | 昵称/签名/性别；沿用读取到的未修改字段 | 已接线，未验收 |
+| `set_qq_profile` | 通过资料监听器获取现有字段，再调用 `ProfileService.modifyDesktopMiniProfile(1)`，回退 `modifySelfProfile(1)` | 昵称/签名/性别；保留生日与未修改字段，读取不全时不提交 | 已接线，未验收 |
 | `set_qq_avatar` / `profile.set_avatar` | `ProfileService.setHeader(1)` | 图片先下载并校验，传入本地路径；QQ 结果码非 0 时显式失败 | 已接线，未验收 |
 | `delete_friend` | `BuddyService.delBuddy(1)` | | 已接线，未验收 |
 | `set_friend_remark` | `BuddyService.setBuddyRemark(1)` | | 已接线，未验收 |
