@@ -15,7 +15,8 @@
 | `get_login_info` | `account.get`（宿主内部） | 宿主返回当前账号与昵称 | 已接线，未验收 |
 | `get_friend_list` | `BuddyService.getBuddyListV2(3)` + `ProfileService.getCoreAndBaseInfo(2)` | 兼容 2/3 参数版本；UID→UIN 转换 | 已接线，未验收 |
 | `get_stranger_info` | `ProfileService.getUserDetailInfoByUin(1)`，回退 `getUserSimpleInfo(2)` | 昵称、性别、年龄、签名、QID | 已接线，未验收 |
-| `set_qq_profile` | `ProfileService.modifySelfProfile(1)` | 昵称/签名/性别 | 已接线，未验收 |
+| `set_qq_profile` | `ProfileService.modifyDesktopMiniProfile(1)`，回退 `modifySelfProfile(1)` | 昵称/签名/性别；沿用读取到的未修改字段 | 已接线，未验收 |
+| `set_qq_avatar` / `profile.set_avatar` | `ProfileService.setHeader(1)` | 图片先下载并校验，传入本地路径；QQ 结果码非 0 时显式失败 | 已接线，未验收 |
 | `delete_friend` | `BuddyService.delBuddy(1)` | | 已接线，未验收 |
 | `set_friend_remark` | `BuddyService.setBuddyRemark(1)` | | 已接线，未验收 |
 | `send_like` | `ProfileLikeService.setBuddyProfileLike(1)` | 名片点赞，1–20 次 | 已接线，未验收 |
@@ -126,7 +127,6 @@ flag 由内核宿主在内存中保存，TTL 10 分钟、最多 200 条。进程
 | `RichMediaService.onlyUploadFile(2)` / `uploadRMFileWithoutMsg(1)` | 文件发送改走 `sendMsg` + `fileElement` |
 | `BuddyService.setBlock(2)` / `getAddFriendBlockedList(2)` | OneBot 无黑名单标准动作 |
 | `ProfileService.getStatusInfo(2)` / `getSelfStatus(0)` | 在线状态，OneBot 无标准字段 |
-| `AvatarService.*` | OneBot 不提供头像动作 |
 | `GroupService.getGroupPortrait(1)` | 群头像，同上 |
 | `GroupService.getGroupEssenceList` 之外的分页/置顶接口 | 现有列表够用 |
 

@@ -43,7 +43,11 @@ const callbacks = new EventEmitter(); let requestingQR = false, loginConnected =
 const requestFlags = new RequestFlags();
 const actionContext = { session:()=>session, msgService:()=>msgService, self:()=>self, emit:event,
   uidToUin:uid=>contactUins.get(uid)||0 };
-const kernelActions = createKernelActions(actionContext, requestFlags);
+const kernelActions = createKernelActions(actionContext, requestFlags, {
+  imageCache, voiceCache,
+  msgService: () => msgService,
+  maxFileBytes: config.media?.maxBytes,
+});
 const kernelEvents = createKernelEvents(actionContext, requestFlags);
 const messageListeners = { onMsgRecall:(...args)=>kernelEvents.onMsgRecall(args) };
 setInterval(()=>requestFlags.cleanup(),60000).unref();
@@ -434,11 +438,15 @@ process.on('message', async packet => {
   if (packet?.cancel) { requests.get(packet.cancel)?.abort(); return; }
   if (!packet || !Number.isSafeInteger(packet.id) || typeof packet.command !== 'string') return;
   const controller = new AbortController(); requests.set(packet.id, controller);
-  const budget=packet.command==='message.fetch'||packet.command==='message.send'&&hasMedia(packet.params?.message)?config.media?.timeout||90000:config.rpcTimeout;
+  const mediaCommand = packet.command === 'message.fetch' || packet.command === 'profile.set_avatar';
+  const budget=mediaCommand||packet.command==='message.send'&&hasMedia(packet.params?.message)?config.media?.timeout||90000:config.rpcTimeout;
   const timer = setTimeout(() => controller.abort(), budget - 250);
   try {
     if (!packet.command.startsWith('auth.') && !online) throw new BotError('Official QQ kernel is offline', 1501);
-    send({ id: packet.id, result: await invoke(packet.command, packet.params || {}, controller.signal) });
+    const params = packet.command.startsWith('profile.')
+      ? { ...(packet.params || {}), signal: controller.signal }
+      : packet.params || {};
+    send({ id: packet.id, result: await invoke(packet.command, params, controller.signal) });
   } catch (error) { send({ id: packet.id, error: { code: error instanceof BotError ? error.code : 1500,
     message: error instanceof BotError ? error.message : 'Official QQ kernel operation failed', uncertain: Boolean(error.uncertain), retryable: Boolean(error.retryable) } }); }
   finally { clearTimeout(timer); requests.delete(packet.id); }

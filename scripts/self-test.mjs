@@ -6,8 +6,10 @@ import { OneBotServer } from '../src/onebot.mjs';
 import { QQDriver } from '../src/qq/driver.mjs';
 import { createLogger } from '../src/logger.mjs';
 import { validateKernelMessage } from '../src/qq/kernel/elements.mjs';
+import { createKernelActions } from '../src/qq/kernel/actions.mjs';
+import { ImageCache } from '../src/qq/kernel/image.mjs';
 import { BotError } from '../src/errors.mjs';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -21,7 +23,7 @@ class FakeDriver extends QQDriver {
     'group.files', 'group.file.delete', 'group.file.space', 'group.notices', 'group.notice.send', 'group.notice.delete',
     'group.honor', 'group.shut_list', 'group.at_all_remain', 'group.essence.list', 'group.essence.add',
     'group.essence.remove', 'friend.requests', 'friend.request', 'friend.delete', 'friend.remark', 'group.requests',
-    'group.request', 'recent.list', 'profile.set']; }
+    'group.request', 'recent.list', 'profile.set', 'profile.set_avatar']; }
   async connect() { this.account = 10000; this.online = true; this.emit('state', { online: true, account: 10000 }); }
   async close() { this.online = false; }
   async invoke(command, params) {
@@ -54,6 +56,7 @@ const driver = new FakeDriver();
 const adapter = new QQAdapter(driver, config);
 const log = createLogger(() => {});
 const server = new OneBotServer({ adapter, config, log, store });
+const avatarSource = join(dataDir, 'avatar-source.png');
 await adapter.start();
 await server.start();
 const address = server.server.address();
@@ -94,6 +97,81 @@ try {
     const result = await call('get_stranger_info', { user_id: 10001 });
     assert.equal(result.status, 'ok');
     assert.equal(driver.calls.at(-1).command, 'user.get');
+  });
+  await check('QQ profile and avatar actions use the kernel commands', async () => {
+    const profile = await call('set_qq_profile', { nickname: '测试昵称', personal_note: '测试签名' });
+    assert.equal(profile.status, 'ok');
+    assert.deepEqual(driver.calls.at(-1), {
+      command: 'profile.set',
+      params: { nickname: '测试昵称', signature: '测试签名', sex: undefined },
+    });
+    const avatar = await call('set_qq_avatar', { file: 'https://example.invalid/avatar.png' });
+    assert.equal(avatar.status, 'ok');
+    assert.deepEqual(driver.calls.at(-1), {
+      command: 'profile.set_avatar',
+      params: { file: 'https://example.invalid/avatar.png' },
+    });
+  });
+  await check('kernel profile uses the desktop update path and preserves unmodified fields', async () => {
+    const calls = [];
+    const profileService = {
+      getUserDetailInfo: async () => ({ longNick: '旧签名', sex: 2 }),
+      modifyDesktopMiniProfile: async payload => { calls.push(payload); return { result: 0 }; },
+      modifySelfProfile: async () => { throw new Error('legacy fallback should not run'); },
+    };
+    const actions = createKernelActions({
+      session: () => ({ getProfileService: () => profileService }),
+      msgService: () => null,
+      self: () => ({ uin: '10000', uid: 'u_self' }),
+      emit: () => {},
+      uidToUin: () => 0,
+    });
+    await actions['profile.set']({ nickname: '测试昵称' });
+    assert.deepEqual(calls, [{ nick: '测试昵称', longNick: '旧签名', sex: 2 }]);
+  });
+  await check('kernel avatar passes a validated local path to setHeader and releases it', async () => {
+    writeFileSync(avatarSource, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVQImWNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=', 'base64'));
+    const cache = new ImageCache(join(dataDir, 'avatar-cache'), { maxBytes: 1024 * 1024 });
+    let headerPath = '';
+    const actions = createKernelActions({
+      session: () => ({ getProfileService: () => ({
+        setHeader: async path => { headerPath = path; return { result: 0 }; },
+      }) }),
+      msgService: () => null,
+      self: () => ({ uin: '10000', uid: 'u_self' }),
+      emit: () => {},
+      uidToUin: () => 0,
+    }, undefined, { imageCache: cache, maxFileBytes: 1024 * 1024 });
+    await actions['profile.set_avatar']({ file: avatarSource });
+    assert.equal(headerPath, join(dataDir, 'avatar-cache', '979029bccb1ddb562ad41da8021235bc.png'));
+    assert.ok(existsSync(headerPath));
+    assert.equal(cache.active.size, 0);
+    assert.match(String(actions['profile.set_avatar']), /setHeader\(image\.path\)/);
+    assert.doesNotMatch(String(actions['profile.set_avatar']), /setHeader\(prepared\.elements/);
+  });
+  await check('kernel avatar reports an uncertain timeout without claiming failure', async () => {
+    const controller = new AbortController();
+    const cache = new ImageCache(join(dataDir, 'avatar-timeout-cache'), { maxBytes: 1024 * 1024 });
+    const actions = createKernelActions({
+      session: () => ({ getProfileService: () => ({
+        setHeader: async () => {
+          controller.abort();
+          throw new Error('native stalled');
+        },
+      }) }),
+      msgService: () => null,
+      self: () => ({ uin: '10000', uid: 'u_self' }),
+      emit: () => {},
+      uidToUin: () => 0,
+    }, undefined, { imageCache: cache, maxFileBytes: 1024 * 1024 });
+    await assert.rejects(actions['profile.set_avatar']({ file: avatarSource, signal: controller.signal }), error => {
+      assert.equal(error.code, 1502);
+      assert.equal(error.uncertain, true);
+      assert.equal(error.retryable, false);
+      assert.match(error.message, /result is unknown/);
+      return true;
+    });
+    assert.equal(cache.active.size, 0);
   });
   await check('send group text with CQ at', async () => {
     const result = await call('send_group_msg', { group_id: 20001, message: '[CQ:at,qq=10001] 你好' });

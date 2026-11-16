@@ -91,7 +91,7 @@ export class KernelDriver extends QQDriver {
     'group.notices', 'group.notice.send', 'group.notice.delete', 'group.honor', 'group.shut_list', 'group.at_all_remain',
     'group.essence.list', 'group.essence.add', 'group.essence.remove',
     'friend.requests', 'friend.request', 'friend.delete', 'friend.remark', 'friend.doubt', 'devices.list',
-    'group.requests', 'group.request', 'recent.list', 'profile.set']; }
+    'group.requests', 'group.request', 'recent.list', 'profile.set', 'profile.set_avatar']; }
   diagnostics() { return { experimental: true, protocol: 'official-qqnt-kernel', version: this.metadata?.version || null,
     sdk_app_id: this.metadata?.sdk_app_id || null,
     ...(this.hostExit ? { host_exit: this.hostExit, stderr_file: 'host-stderr.log' } : {}),

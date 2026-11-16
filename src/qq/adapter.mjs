@@ -72,6 +72,7 @@ export class QQAdapter extends EventEmitter {
     const combined = signal ? AbortSignal.any([signal, this.controller.signal]) : this.controller.signal;
     if (!this.driver.online && !command.startsWith('auth.')) throw new BotError('QQ driver is offline or not implemented', 1501, { retryable: true });
     const timeout = command === 'message.get' || command === 'message.history' || command === 'image.get' ||
+      command === 'profile.set_avatar' ||
       (command === 'message.send' && hasMedia(params.message)) || String(command).startsWith('group.file')
       ? this.config.media?.timeout || 90000 : this.config.rpcTimeout;
     return deadline(s => this.driver.invoke(command, params, { signal: s }), timeout, { mutation, signal: combined });
@@ -242,6 +243,11 @@ export class QQAdapter extends EventEmitter {
       case 'get_recent_contact': return call('recent.list');
       case 'set_qq_profile': return call('profile.set', {
         nickname: params.nickname, signature: params.signature ?? params.personal_note, sex: params.sex }, true);
+      case 'set_qq_avatar': {
+        const file = String(params.file || '').trim();
+        if (!file) throw new BotError('Avatar image source is required', 1400);
+        return call('profile.set_avatar', { file }, true);
+      }
       case 'delete_friend': return call('friend.delete', { userId: positive(params.user_id, 'user_id') }, true);
       case 'set_friend_remark': return call('friend.remark', {
         userId: positive(params.user_id, 'user_id'), remark: params.remark }, true);

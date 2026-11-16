@@ -107,7 +107,7 @@ export class RequestFlags {
  * has to resolve a OneBot ID stays in the parent driver, which owns the SQLite
  * mapping; the host process only talks to the QQ SDK.
  */
-export function createKernelActions(context, flags = new RequestFlags()) {
+export function createKernelActions(context, flags = new RequestFlags(), media = {}) {
   const session = () => {
     const value = context.session();
     if (!value) throw new BotError('QQ session is not ready', 1501);
@@ -484,14 +484,53 @@ export function createKernelActions(context, flags = new RequestFlags()) {
     },
 
     'profile.set': async ({ nickname, signature, sex }) => {
+      if (nickname === undefined && signature === undefined && sex === undefined) {
+        throw new BotError('No supported profile field was supplied', 1400);
+      }
+      const profile = session().getProfileService();
+      const current = nickname === undefined || signature === undefined || sex === undefined
+        ? await profile.getUserDetailInfo(String(context.self?.()?.uid || '')).catch(() => null)
+        : null;
+      const detail = current?.userDetailInfo ?? current?.detailInfo ?? current?.info ?? current ?? {};
       const payload = {};
       if (nickname !== undefined) payload.nick = String(nickname).slice(0, 36);
       if (signature !== undefined) payload.longNick = String(signature).slice(0, 200);
+      else if (detail.longNick !== undefined) payload.longNick = String(detail.longNick).slice(0, 200);
       if (sex !== undefined) payload.sex = sex === 'male' ? 1 : sex === 'female' ? 2 : 0;
-      if (!Object.keys(payload).length) throw new BotError('No supported profile field was supplied', 1400);
-      const value = await session().getProfileService().modifySelfProfile(payload);
+      else if (detail.sex !== undefined) payload.sex = Number(detail.sex) || 0;
+      const value = await variants('QQ self profile update', [
+        () => profile.modifyDesktopMiniProfile(payload),
+        () => profile.modifySelfProfile(payload)
+      ]);
       checked(value, 'QQ refused to update the profile');
       return null;
+    },
+
+    'profile.set_avatar': async ({ file, signal } = {}) => {
+      if (typeof file !== 'string' || !file.trim()) throw new BotError('Avatar image source is required', 1400);
+      if (!media.imageCache) throw new BotError('QQ image cache is unavailable', 1501);
+      const image = await media.imageCache.acquire(file.trim(), { signal });
+      try {
+        signal?.throwIfAborted();
+        let value;
+        try {
+          value = await session().getProfileService().setHeader(image.path);
+        } catch (error) {
+          if (signal?.aborted) {
+            const timeout = new BotError('QQ avatar update result is unknown after timeout', 1502, {
+              uncertain: true, retryable: false
+            });
+            timeout.cause = error;
+            throw timeout;
+          }
+          throw error;
+        }
+        checked(value, 'QQ refused to update the avatar');
+        return null;
+      } finally {
+        image.release();
+        await media.imageCache?.cleanup().catch(() => {});
+      }
     },
 
     'friend.delete': async ({ userId }) => {
