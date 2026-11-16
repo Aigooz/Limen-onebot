@@ -115,7 +115,9 @@ try {
   await check('kernel profile uses the desktop update path and preserves unmodified fields', async () => {
     const calls = [];
     const profileService = {
-      getUserDetailInfo: async () => ({ longNick: '旧签名', sex: 2 }),
+      getUserDetailInfo: async () => ({
+        longNick: '旧签名', sex: 2, birthday_year: 2000, birthday_month: 1, birthday_day: 2
+      }),
       modifyDesktopMiniProfile: async payload => { calls.push(payload); return { result: 0 }; },
       modifySelfProfile: async () => { throw new Error('legacy fallback should not run'); },
     };
@@ -127,7 +129,11 @@ try {
       uidToUin: () => 0,
     });
     await actions['profile.set']({ nickname: '测试昵称' });
-    assert.deepEqual(calls, [{ nick: '测试昵称', longNick: '旧签名', sex: 2 }]);
+    assert.deepEqual(calls, [{
+      nick: '测试昵称', longNick: '旧签名', sex: 2,
+      birthday: { birthday_year: '2000', birthday_month: '1', birthday_day: '2' },
+      location: undefined
+    }]);
   });
   await check('kernel avatar passes a validated local path to setHeader and releases it', async () => {
     writeFileSync(avatarSource, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVQImWNgYAAAAAMAAWgmWQ0AAAAASUVORK5CYII=', 'base64'));

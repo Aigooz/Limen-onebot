@@ -498,6 +498,13 @@ export function createKernelActions(context, flags = new RequestFlags(), media =
       else if (detail.longNick !== undefined) payload.longNick = String(detail.longNick).slice(0, 200);
       if (sex !== undefined) payload.sex = sex === 'male' ? 1 : sex === 'female' ? 2 : 0;
       else if (detail.sex !== undefined) payload.sex = Number(detail.sex) || 0;
+      const birthday = detail.birthday ?? {};
+      payload.birthday = {
+        birthday_year: String(detail.birthday_year ?? birthday.birthday_year ?? birthday.year ?? 0),
+        birthday_month: String(detail.birthday_month ?? birthday.birthday_month ?? birthday.month ?? 0),
+        birthday_day: String(detail.birthday_day ?? birthday.birthday_day ?? birthday.day ?? 0)
+      };
+      payload.location = undefined;
       const value = await variants('QQ self profile update', [
         () => profile.modifyDesktopMiniProfile(payload),
         () => profile.modifySelfProfile(payload)
